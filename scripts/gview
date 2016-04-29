@@ -1,0 +1,14 @@
+#!/usr/bin/env python
+#
+# gview -- simple astronomical image viewer modeled after ZVIEW
+#
+"""
+Usage:
+    gview --help
+    gview [options] [fitsfile] ...
+"""
+import sys
+from gview import main
+
+if __name__ == "__main__":
+    main.run_viewer(sys.argv)
