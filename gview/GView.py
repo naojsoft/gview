@@ -6,8 +6,7 @@
 # This is open-source software licensed under a BSD license.
 # Please see the file LICENSE.txt for details.
 #
-from __future__ import print_function
-import sys
+import time
 
 from ginga import AstroImage
 from ginga.canvas.CanvasObject import get_canvas_types
@@ -28,7 +27,7 @@ class FitsViewer(object):
         ## self.drawcolors = colors.get_colors()
         self.dc = get_canvas_types()
 
-        from ginga.gw import Widgets, Viewers, GwHelp
+        from ginga.gw import Widgets, Viewers
 
         self.top = self.app.make_window(name)
         self.top.add_callback('close', self.closed)
@@ -160,14 +159,15 @@ class FitsViewer(object):
 
     def closed(self, w):
         self.logger.info("viewer '%s' closed." % (self.name))
-        self.zv.close_viewer(self.name)
+        self.zv.delete_viewer(self.name)
 
 
 class GView(object):
 
-    def __init__(self, logger, app):
+    def __init__(self, logger, app, ev_quit):
         self.logger = logger
         self.app = app
+        self.ev_quit = ev_quit
 
         self.histlimit = 5000
         self._plot_w = None
@@ -177,22 +177,45 @@ class GView(object):
         from ginga.gw import Widgets
 
         self.top = self.app.make_window('GView')
-        #self.top.add_callback('close', self.quit)
+        self.top.add_callback('close', lambda w: self.quit())
+
+        vbox = Widgets.VBox()
+        vbox.set_border_width(2)
+        vbox.set_spacing(1)
+        self.top.set_widget(vbox)
+        self.top.resize(800, 600)
+
+        mbar = Widgets.Menubar()
+        vbox.add_widget(mbar, stretch=0)
+
+        filemenu = mbar.add_name("File")
+        filemenu.add_separator()
+
+        item = filemenu.add_name("Quit")
+        item.add_callback('activated', lambda *args: self.quit())
+
+        nb = Widgets.TabWidget()
+        vbox.add_widget(nb, stretch=1)
+
+        sbar = Widgets.StatusBar()
+        vbox.add_widget(sbar, stretch=0)
 
         vbox = Widgets.VBox()
         vbox.set_border_width(2)
         vbox.set_spacing(1)
 
+        vbox.add_widget(Widgets.Label("Type command here:"))
         self.cmd_w = Widgets.TextEntry()
         vbox.add_widget(self.cmd_w, stretch=0)
         self.cmd_w.add_callback('activated', self.exec_cmd_cb)
 
+        vbox.add_widget(Widgets.Label("Output:"))
         self.hist_w = Widgets.TextArea(wrap=True, editable=True)
         self.hist_w.set_limit(self.histlimit)
         vbox.add_widget(self.hist_w, stretch=1)
 
-        self.top.set_widget(vbox)
-        self.top.resize(800, 600)
+        nb.add_widget(vbox, "Command")
+
         self.top.show()
 
     def make_viewer(self, name, width=900, height=1000):
@@ -218,7 +241,12 @@ class GView(object):
 
     def exec_cmd(self, text):
         text = text.strip()
-        self.log("ZVIEW> " + text)
+        self.log("gview> " + text, w_time=True)
+
+        if text.startswith('/'):
+            # escape to shell for this command
+            self.exec_shell(text[1:])
+            return
 
         args = text.split()
         cmd, args = args[0], args[1:]
@@ -233,7 +261,7 @@ class GView(object):
         try:
             res = method(*args)
             if res is not None:
-                self.log("%s" % str(res))
+                self.log(str(res))
 
         except Exception as e:
             self.log("!! Error executing '%s': %s" % (text, str(e)))
@@ -244,9 +272,41 @@ class GView(object):
         self.exec_cmd(text)
         w.set_text("")
 
-    def log(self, text):
+    def exec_shell(self, cmd_str):
+        res, out, err = get_exitcode_stdout_stderr(cmd_str)
+        if len(out) > 0:
+            self.log(out)
+        if len(err) > 0:
+            self.log(err)
+        if res != 0:
+            self.log("command terminated with error code %d" % res)
+
+    def log(self, text, w_time=False):
         if self.hist_w is not None:
-            self.hist_w.append_text(text + '\n',
+            pfx = ''
+            if w_time:
+                pfx = time.strftime("%H:%M:%S", time.localtime()) + ": "
+            self.hist_w.append_text(pfx + text + '\n',
                                     autoscroll=True)
+
+    def quit(self):
+        self.ev_quit.set()
+        self.top.delete()
+
+
+def get_exitcode_stdout_stderr(cmd):
+    """
+    Execute the external command and get its exitcode, stdout and stderr.
+    """
+    from subprocess import Popen, PIPE
+    import shlex
+    args = shlex.split(cmd)
+
+    proc = Popen(args, stdout=PIPE, stderr=PIPE)
+    out, err = proc.communicate()
+    exitcode = proc.returncode
+
+    return exitcode, out, err
+
 
 # END

@@ -8,6 +8,7 @@
 #
 from __future__ import print_function
 import sys
+import threading
 
 from ginga.misc import log
 
@@ -27,10 +28,18 @@ def main(options, args):
 
     from ginga.gw import Widgets
 
+    if options.use_opencv:
+        from ginga import trcalc
+        try:
+            trcalc.use('opencv')
+        except Exception as e:
+            logger.warning("Error using opencv: %s" % str(e))
+
+    ev_quit = threading.Event()
     app = Widgets.Application(logger=logger)
 
-    gv = GView.GView(logger, app)
-    #app.add_callback('shutdown', gv.quit)
+    gv = GView.GView(logger, app, ev_quit)
+    app.add_callback('shutdown', lambda *args: gv.quit())
 
     i = 0
     for arg in args:
@@ -45,7 +54,7 @@ def main(options, args):
             app.start()
 
         else:
-            while True:
+            while not ev_quit.isSet():
                 app.process_events()
 
     except KeyboardInterrupt:
@@ -64,6 +73,9 @@ def run_viewer(sys_argv):
     optprs.add_option("-t", "--toolkit", dest="toolkit", metavar="NAME",
                       default='qt',
                       help="Choose GUI toolkit (gtk|qt)")
+    optprs.add_option("--opencv", dest="use_opencv", default=False,
+                      action="store_true",
+                      help="Use OpenCv acceleration, if available")
     optprs.add_option("--profile", dest="profile", action="store_true",
                       default=False,
                       help="Run the profiler on main()")
