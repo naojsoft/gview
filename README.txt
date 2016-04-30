@@ -43,9 +43,9 @@ history box below that.
 The basic idea behind the viewer is that you have buffers and viewers,
 and they are named.
 
-Summary of commands
--------------------
+Help
+----
 
-mkview NAME
-  - make a viewer with name NAME
+help [cmd]
+  - get a general help message or specific help for a command
 

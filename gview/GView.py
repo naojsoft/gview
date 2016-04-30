@@ -71,13 +71,6 @@ class FitsViewer(object):
         bm.map_event('zview', (), 'right', 'zoom_in')
         bm.map_event('zview', (), 'left', 'zoom_out')
 
-        bm.map_event('zview', (), 'p', 'radial-plot')
-        fi.set_callback('keydown-radial-plot', self.zv.do_radial_plot)
-        bm.map_event('zview', (), 'e', 'contour-plot')
-        fi.set_callback('keydown-contour-plot', self.zv.do_contour_plot)
-        bm.map_event('zview', (), 'g', 'gaussians-plot')
-        fi.set_callback('keydown-gaussians-plot', self.zv.do_gaussians_plot)
-
         # canvas that we will draw on
         canvas = self.dc.DrawingCanvas()
         ## canvas.enable_draw(True)
@@ -91,7 +84,21 @@ class FitsViewer(object):
 
         fi.set_desired_size(512, 512)
         iw = Viewers.GingaViewerWidget(viewer=fi)
+        self.viewer_w = iw
         vbox.add_widget(iw, stretch=1)
+
+        bm.map_event('zview', (), 'p', 'radial-plot')
+        fi.set_callback('keydown-radial-plot',
+                        self.gv.plot_cmd_cb, self.zv.do_radial_plot,
+                        "Radial Profile", self.viewer_w)
+        bm.map_event('zview', (), 'e', 'contour-plot')
+        fi.set_callback('keydown-contour-plot',
+                        self.gv.plot_cmd_cb, self.zv.do_contour_plot,
+                        "Contours", self.viewer_w)
+        bm.map_event('zview', (), 'g', 'gaussians-plot')
+        fi.set_callback('keydown-gaussians-plot',
+                        self.gv.plot_cmd_cb, self.zv.do_gaussians_plot,
+                        "FWHM", self.viewer_w)
 
         self.readout = Widgets.Label("")
         self.readout.set_color(bg='black', fg='lightgreen')
@@ -174,7 +181,7 @@ class GView(object):
 
         self.zv = ZView.ZView(logger, self)
 
-        from ginga.gw import Widgets
+        from ginga.gw import Widgets, GwHelp
 
         self.top = self.app.make_window('GView')
         self.top.add_callback('close', lambda w: self.quit())
@@ -206,11 +213,15 @@ class GView(object):
 
         vbox.add_widget(Widgets.Label("Type command here:"))
         self.cmd_w = Widgets.TextEntry()
+        # TODO: this is not fetching a fixed font
+        font = GwHelp.get_font("fixed", 12)
+        self.cmd_w.set_font(font)
         vbox.add_widget(self.cmd_w, stretch=0)
         self.cmd_w.add_callback('activated', self.exec_cmd_cb)
 
         vbox.add_widget(Widgets.Label("Output:"))
         self.hist_w = Widgets.TextArea(wrap=True, editable=True)
+        self.hist_w.set_font(font)
         self.hist_w.set_limit(self.histlimit)
         vbox.add_widget(self.hist_w, stretch=1)
 
@@ -263,14 +274,29 @@ class GView(object):
             if res is not None:
                 self.log(str(res))
 
+            # this brings the focus back to the command bar if the command
+            # causes a new window to be opened
+            self.cmd_w.focus()
+
         except Exception as e:
             self.log("!! Error executing '%s': %s" % (text, str(e)))
             # TODO: add traceback
+
 
     def exec_cmd_cb(self, w):
         text = w.get_text()
         self.exec_cmd(text)
         w.set_text("")
+
+    def plot_cmd_cb(self, viewer, event, data_x, data_y, fn, title, viewer_w):
+        try:
+            fn(viewer, event, data_x, data_y)
+
+            self._plot_w.set_title(title)
+        finally:
+            # this keeps the focus on the viewer widget, in case a new
+            # window was popped up
+            viewer_w.focus()
 
     def exec_shell(self, cmd_str):
         res, out, err = get_exitcode_stdout_stderr(cmd_str)
